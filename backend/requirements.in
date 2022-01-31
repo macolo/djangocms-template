@@ -8,8 +8,13 @@ uwsgi
 whitenoise  # serving static files
 
 django_storage_url
+dj-database-url
+django-cache-url
+dj-email-url  # For parsing EMAIL_URL env variable
 
-https://github.com/divio/aldryn-sso/archive/refs/heads/master.zip#egg=aldryn-sso  # there is no pypi package of this
+django-csp
+
+aldryn-sso
 
 # Django Filer - optional, but used in most projects
 easy_thumbnails
@@ -31,7 +36,7 @@ djangocms-blog
 djangocms-history
 djangocms-snippet
 https://github.com/django-cms/djangocms-video/archive/refs/heads/master.zip#egg=djangocms-video  # wait for responsiveness fix to be on pypi
-https://github.com/django-cms/djangocms-bootstrap4/archive/7f887cd99ed5e11f59dcc77a97773bbce6c70d80.zip#egg=djangocms-bootstrap4  # TODO: This needs to be cleaned up. Also check this pull request: https://github.com/django-cms/djangocms-bootstrap4/pull/137
+djangocms-bootstrap4
     python-slugify
 djangocms-googlemap
 djangocms-modules
@@ -52,7 +57,10 @@ djangocms-page-meta
 
 django-settings-export # settings export to templates
 django-enumfields
-django-admin-sortable2 # drag and drop sorting for admin
+
+# django-admin-sortable2==1.0.3 and higher requires Django>=3.2
+django-admin-sortable2<1.0.3 # drag and drop sorting for admin
+
 django-sortedm2m # M2M drag and drop sorting for admin, don't use django-admin-sortable2 for M2M
 django-filter # generic view filter helpers for front and admin panel, as `?field__gte=5`
 django-google-tag-manager
@@ -71,11 +79,8 @@ django-countries
 django-widget-tweaks
 django-logentry-admin
 django-adminutils # a set of shortcuts for admin.py composition
-dj-database-url
-django-csp
 
 sentry-sdk
 django-robots
 
-django-simple-sso<1
 

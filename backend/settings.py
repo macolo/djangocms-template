@@ -3,6 +3,8 @@ from enum import Enum
 from typing import List
 
 import dj_database_url
+import dj_email_url
+import django_cache_url
 import environ
 from django.urls import reverse_lazy
 from django_storage_url import dsn_configured_storage_class
@@ -27,26 +29,16 @@ class DjangoEnv(Enum):
 DJANGO_ENV_ENUM = DjangoEnv
 DJANGO_ENV = DjangoEnv(env.str('STAGE', default='local'))
 
-
-if DJANGO_ENV == DjangoEnv.LOCAL:
-    # environ.Env.read_env()  not needed for Docker setup, done via docker-compose.yml
-    CACHE_URL = 'locmem://'  # to disable a warning from aldryn-django
-
-
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(BACKEND_DIR)
 os.environ['BASE_DIR'] = BASE_DIR
 os.environ['DJANGO_SETTINGS_MODULE'] = 'backend.settings'
 
-
 BASE_DIR: str = locals()['BASE_DIR']
+
+# environ.Env.read_env(os.path.join(BASE_DIR, '.local-env'))  # Uncomment if you use local setup without docker
 DOMAIN: str = locals().get('DOMAIN', 'localhost')
 SITE_NAME: str = locals().get('SITE_NAME', 'dev testing site')
-
-
-################################################################################
-# django
-################################################################################
 
 
 WSGI_APPLICATION = 'backend.wsgi.application'
@@ -81,6 +73,7 @@ installed_apps_overrides = [
 INSTALLED_APPS = installed_apps_overrides + INSTALLED_APPS
 
 INSTALLED_APPS.extend([
+    ## BEWARE: any application added here will not show their models in django admin UNLESS you configure them below in the ADMIN_REORDER setting.
 
     # custom user
     'allauth',
@@ -138,7 +131,6 @@ INSTALLED_APPS.extend([
     'djangocms_bootstrap4.contrib.bootstrap4_media',
     'djangocms_bootstrap4.contrib.bootstrap4_tabs',
     'djangocms_bootstrap4.contrib.bootstrap4_utilities',
-    'djangocms_bootstrap4.contrib.bootstrap4_heading',
     'djangocms_picture',
     'djangocms_bootstrap4.contrib.bootstrap4_picture',
     'aldryn_apphooks_config',
@@ -180,6 +172,8 @@ INSTALLED_APPS.extend([
     'backend.plugins.bs4_inline_alignment',
     'backend.plugins.bs4_spacer',
     'backend.plugins.horizontal_line',
+
+    ## BEWARE: any application added here will not show their models in django admin UNLESS you configure them below in the ADMIN_REORDER setting.
 ])
 
 
@@ -209,9 +203,9 @@ MIDDLEWARE = [
 ]
 
 
-# Configure database using DATABASE_URL; fall back to sqlite in memory when no
+# Configure database using DATABASE_URL; fall back to sqlite file when no
 # environment variable is available, e.g. during Docker build
-DATABASE_URL = env.str('DATABASE_URL', default='sqlite://:memory:')
+DATABASE_URL = env.str('DATABASE_URL', default=f'sqlite:///{BASE_DIR}/db.sqlite')
 DATABASES = {'default': dj_database_url.parse(DATABASE_URL)}
 
 
@@ -251,16 +245,24 @@ TEMPLATES = [
 ]
 
 
-if DJANGO_ENV == DjangoEnv.LOCAL:
-    email_backend_default = 'django.core.mail.backends.console.EmailBackend'
-else:
-    email_backend_default = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_BACKEND = env.str('EMAIL_BACKEND', default=email_backend_default)
+# translating the EMAIL_URL env var into django email settings
+email_config = dj_email_url.config(env="EMAIL_URL", default="console:")
+vars().update(email_config)  # this loads the standard django email settings such as EMAIL_HOST, etc.
 
-DEFAULT_FROM_EMAIL = env.str('DEFAULT_FROM_EMAIL', f'{SITE_NAME} <info@{DOMAIN}>')
+# EMAIL_FROM should be included in the EMAIL_URL, see https://github.com/migonzalvar/dj-email-url#set-from-email-addresses
+SERVER_EMAIL = email_config.get('SERVER_EMAIL', 'root@localhost')
+DEFAULT_FROM_EMAIL = email_config.get('DEFAULT_FROM_EMAIL', f'{SITE_NAME} <info@{DOMAIN}>')
+
+
+if DJANGO_ENV == DjangoEnv.LOCAL:
+    CACHE_URL = 'dummy://'  # to disable a warning from aldryn-django
+
+# avoid locmem as default on production, it doesn't work properly
+CACHES = {'default': django_cache_url.config(default="dummy://")}
 
 
 SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
+# PREPEND_WWW = True (if you want to redirect domain.com/... to www.domain.com/...
 HTTP_PROTOCOL = env.str('HTTP_PROTOCOL', 'https')
 
 
@@ -314,6 +316,7 @@ WEBPACK_DEV_URL = env.str('WEBPACK_DEV_URL', default='http://0.0.0.0:8090')
 
 
 SENTRY_DSN = env.str('SENTRY_DSN', '')
+
 SETTINGS_EXPORT = [
     'DOMAIN',
     'SITE_NAME',
@@ -385,6 +388,16 @@ RECAPTCHA_PRIVATE_KEY = env.str('RECAPTCHA_PRIVATE_KEY', '6LcI2-YUAAAAADHRo9w9nV
 RECAPTCHA_SCORE_THRESHOLD = 0.85
 
 
+# Caching
+# to disable django caching completely, you can also do:
+# {
+#     'default': {
+#         'BACKEND': '',
+#     }
+# }
+# beware that you will have to disable django CMS caching separately from this
+# by removing the django CMS caching middleware
+
 if DEBUG:
     CACHE_MIDDLEWARE_SECONDS = 0
     # there's a bug with caching - https://github.com/what-digital/divio/issues/9
@@ -453,7 +466,7 @@ CMS_TEMPLATES = [
     ('whitenoise-static-files-demo.html', 'Static File Demo'),
 ]
 
-X_FRAME_OPTIONS = 'SAMEORIGIN'
+X_FRAME_OPTIONS = 'SAMEORIGIN'  # for the iframe-embedded django admin
 
 CMS_PERMISSION = True
 
@@ -626,8 +639,9 @@ if DJANGO_ENV == DjangoEnv.LOCAL:
     ALDRYN_SSO_ENABLE_LOCALDEV = True
 
 ALDRYN_SSO_ALWAYS_REQUIRE_LOGIN = False
-if DJANGO_ENV == DjangoEnv.TEST:
-    ALDRYN_SSO_ALWAYS_REQUIRE_LOGIN = True  # stage servers must be protected
+if DJANGO_ENV == DjangoEnv.TEST or env.bool('ALDRYN_SSO_ALWAYS_REQUIRE_LOGIN', default=False):
+    # stage servers must always be protected, live servers only if env var is explicitely set
+    ALDRYN_SSO_ALWAYS_REQUIRE_LOGIN = True
 
 if ALDRYN_SSO_ALWAYS_REQUIRE_LOGIN:
     # apparently the middleware is not checking ALDRYN_SSO_ALWAYS_REQUIRE_LOGIN
